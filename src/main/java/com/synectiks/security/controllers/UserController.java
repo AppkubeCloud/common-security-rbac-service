@@ -219,7 +219,8 @@ public class UserController implements IApiController {
         //this statement executes when user created with the sign-up page.
         if (StringUtils.isBlank(roleId) && Constants.USER_TYPE_ADMIN.equalsIgnoreCase(type) && ownerId == null) {
             logger.debug("Assigning default role group for organization admin");
-            List<Role> roleList = (List<Role>) roleRepository.findByCreatedByAndGrp(Constants.SYSTEM_ACCOUNT, true);
+//            List<Role> roleList = (List<Role>) roleRepository.findByCreatedByAndGrp(Constants.SYSTEM_ACCOUNT, true);
+            List<Role> roleList = (List<Role>) roleRepository.findByGrpAndIsDefault(true, true);
             if (roleList.size() > 0) {
                 user.setRoles(roleList);
             }

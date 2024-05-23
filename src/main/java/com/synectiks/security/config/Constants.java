@@ -46,7 +46,7 @@ public final class Constants {
     public static String DENY = "DENY";
     public static String TYPE_NEW_USER = "NEW_USER";
 
-    public static String DEFAULT_ORGANIZATION = "DEFAULT";
+    public static String DEFAULT_ORGANIZATION = "SYNECTIKS";
     public static String GLOBAL_AWS_ACCESS_KEY = "GLOBAL_AWS_ACCESS_KEY";
     public static String GLOBAL_AWS_SECRET_KEY = "GLOBAL_AWS_SECRET_KEY";
     public static String GLOBAL_AWS_REGION = "GLOBAL_AWS_REGION";
@@ -92,6 +92,7 @@ public final class Constants {
     public static String ERROR = "ERROR";
 
     public static String ROLE_DEFAULT_USERS = "Default Users";
+    public static String DEFAULT_TARGET_SERVICE = "CMDB";
     private Constants() {
 
     }

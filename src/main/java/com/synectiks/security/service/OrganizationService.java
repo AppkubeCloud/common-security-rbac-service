@@ -11,25 +11,31 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.core.env.Environment;
 import org.springframework.data.domain.Example;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.annotation.PostConstruct;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 public class OrganizationService {
 
 	private static final Logger logger = LoggerFactory.getLogger(OrganizationService.class);
+
+    private final Environment env;
 
     @Autowired
     private OrganizationRepository organizationRepository;
@@ -40,6 +46,7 @@ public class OrganizationService {
     @Autowired
     private RestTemplate restTemplate;
 
+    public OrganizationService(Environment env){this.env = env;}
     public Organization save(Organization organization) {
     	logger.debug("Save organization : {}", organization);
         return organizationRepository.save(organization);
@@ -80,75 +87,30 @@ public class OrganizationService {
             Organization organization = new Organization();
             organization.setName(localOrganizationName.toUpperCase());
             organization.setCreatedAt(user.getCreatedAt());
-            organization.setUpdatedAt(user.getUpdatedAt());
             organization.setCreatedBy(user.getCreatedBy());
-            organization.setUpdatedBy(user.getUpdatedBy());
             organization.setStatus(Constants.ACTIVE);
             organization = save(organization);
+
             try {
                 uploadUserProfileImageToS3(multipartFile, user, organization, appkubeAwsS3Service );
             } catch (IOException e) {
                 logger.error("Exception. Organization profile image could not be saved in s3", e);
             }
-            String url =  resolveTargetServiceUrl(targetService);
-            if(!StringUtils.isBlank(url)){
-                // fetch organization from cmdb and check if exists
-                boolean isOrgFound = false;
-                logger.info("Getting list of organization from remote service. Remote service url: {}", url);
-                ResponseEntity<List<Organization>> response = restTemplate.exchange( url, HttpMethod.GET,null, new ParameterizedTypeReference<List<Organization>>(){});
-                if(response != null && response.getBody() != null){
-                    logger.debug("Checking url response");
-                    List<Organization> remoteOrganizationList = response.getBody();
-                    for(Organization remoteOrg: remoteOrganizationList){
-                        if(localOrganizationName.equalsIgnoreCase(remoteOrg.getName())){
-                            logger.debug("Given organization found in the remote service");
-                            // if exists
-                            isOrgFound = true;
-                            logger.debug("Saving remote organization reference in local organization. Remote organization id: {}",remoteOrg.getId());
-                            //keep cmdb reference in local organization
-                            organization.setCmdbOrgId(remoteOrg.getId());
-                            organization = save(organization);
-                            user.setOrganization(organization);
-                            logger.debug("Passing local organization to remote service");
-                            //update cmdb organization with local organization reference
-                            remoteOrg.setSecurityServiceOrgId(organization.getId());
-                            restTemplate.patchForObject(url, remoteOrg, Organization.class);
-                            break;
-                        }
-                    }
-                }
-                if(!isOrgFound){
-                    logger.info("Given organization not found at remote service. Adding this organization to the remote service. Remote service URL: {}", url);
-                    Organization org = new Organization();
-                    org.setName(organization.getName());
-                    org.setSecurityServiceOrgId(organization.getId());
-                    ResponseEntity<Organization> result = restTemplate.postForEntity(url, org, Organization.class);
-                    if(result != null && result.getBody() != null){
-                        // if successfully pushed, keep its reference in local organization
-                        Organization remoteOrg = result.getBody();
-                        logger.debug("Saving remote reference of remote organization in local organization. Remote organization id: {}",remoteOrg.getId());
-                        organization.setCmdbOrgId(remoteOrg.getId());
-                        organization = save(organization);
-                        user.setOrganization(organization);
-                    }
-                }
-            }else{
-                user.setOrganization(organization);
-            }
-
+            syncOrgWithCmdb(organization);
+            user.setOrganization(organization);
         }
     }
 
-    public String resolveTargetServiceUrl(String targetService){
-        if(!StringUtils.isBlank(targetService)){
-            if("CMDB".equalsIgnoreCase(targetService)){
-                Organization organization = this.getOrganizationByName(Constants.DEFAULT_ORGANIZATION);
-                Config config = configService.findByKeyAndOrganizationId(Constants.CMDB_ORGANIZATION_URL, organization.getId());
-                return config.getValue();
-            }
-        }
-        return null;
-    }
+//    public String resolveTargetServiceUrl(String targetService){
+//        if(!StringUtils.isBlank(targetService)){
+//            if(Constants.DEFAULT_TARGET_SERVICE.equalsIgnoreCase(targetService)){
+//                Organization organization = this.getOrganizationByName(Constants.DEFAULT_ORGANIZATION);
+//                Config config = configService.findByKeyAndOrganizationId(Constants.CMDB_ORGANIZATION_URL, organization.getId());
+//                return config.getValue();
+//            }
+//        }
+//        return null;
+//    }
 
     private void uploadUserProfileImageToS3(MultipartFile multipartFile, User user, Organization organization, AppkubeAwsS3Service appkubeAwsS3Service) throws IOException {
         if (multipartFile != null) {
@@ -176,5 +138,66 @@ public class OrganizationService {
 
             logger.debug("user profile image saved successfully");
         }
+    }
+
+
+    @PostConstruct
+    @Scheduled(cron = "0 */2 * ? * *") // runs every two mins
+    public void syncOrgWithCmdbAfterServerStart() {
+        logger.info("Synchronizing organizations with cmdb at application start-up");
+        List<Organization> organizationList = findAll().stream().filter(obj -> obj.getCmdbOrgId() == null).collect(Collectors.toList());
+        for(Organization organization: organizationList){
+            syncOrgWithCmdb(organization);
+        }
+    }
+
+    public void syncOrgWithCmdb(Organization organization){
+        String baseUrl = env.getProperty("synectiks-cmdb-service.url")+"/organization";
+        String getByNameUrl = baseUrl+"/get-by-name/"+organization.getName().toUpperCase();
+        logger.info("Getting list of organization from remote service. Remote service url: {}", getByNameUrl);
+        Organization remoteOrg = null;
+        try{
+            ResponseEntity<Organization> response = restTemplate.exchange( getByNameUrl, HttpMethod.GET,null, new ParameterizedTypeReference<Organization>(){});
+            if(response != null && response.getBody() != null){
+                logger.debug("Checking url response");
+                remoteOrg = response.getBody();
+            }
+        }catch (Exception e){
+            logger.warn("Organization not found in remote CMDB service");
+        }
+
+        if(remoteOrg != null){
+            logger.debug("Given organization found in CMDB, saving its reference in local organization. Remote organization id: {}",remoteOrg.getId());
+            //keep cmdb reference in local organization
+            organization.setCmdbOrgId(remoteOrg.getId());
+            organization = save(organization);
+            try{
+                logger.debug("Passing local organization reference to remote cmdb service");
+                //update cmdb organization with local organization reference
+                remoteOrg.setSecurityServiceOrgId(organization.getId());
+                restTemplate.patchForObject(baseUrl, remoteOrg, Organization.class);
+            }catch(Exception e){
+                logger.warn("Due to some exception, cannot pass local organization reference to update remote cmdb organization service. Error: {}",e.getMessage());
+            }
+
+        }else {
+            logger.info("Given organization not found at remote service. Adding this organization to the remote service. Remote service URL: {}", baseUrl);
+            try{
+                Organization org = new Organization();
+                org.setName(organization.getName());
+                org.setSecurityServiceOrgId(organization.getId());
+                ResponseEntity<Organization> result = restTemplate.postForEntity(baseUrl, org, Organization.class);
+                if(result != null && result.getBody() != null){
+                    // if successfully pushed, keep its reference in local organization
+                    remoteOrg = result.getBody();
+                    logger.debug("Saving remote reference of remote organization in local organization. Remote organization id: {}",remoteOrg.getId());
+                    organization.setCmdbOrgId(remoteOrg.getId());
+                    organization = save(organization);
+                }
+            }catch (Exception e){
+                logger.warn("Due to some exception, cannot pass local organization reference to add to remote cmdb organization service. Error: {}",e.getMessage());
+            }
+        }
+
     }
 }
