@@ -5,12 +5,18 @@ import javax.persistence.*;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.synectiks.security.config.IDBConsts;
 import com.synectiks.security.domain.PSqlEntity;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.NoArgsConstructor;
 
 /**
  * @author Rajesh
  */
 @Entity
 @Table(name = IDBConsts.Tbl_PERMISSION)
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class Permission extends PSqlEntity {
 
 	private static final long serialVersionUID = 8069169541347906220L;
@@ -82,4 +88,14 @@ public class Permission extends PSqlEntity {
 				+ (updatedBy != null ? "updatedBy\": \"" + updatedBy : "") + "}";
 	}
 
+    public static Permission build(Permission oldPermission, Organization organization){
+        Permission permission = Permission.builder()
+            .name(oldPermission.getName())
+            .description(oldPermission.getDescription())
+            .status(oldPermission.getStatus())
+            .version(oldPermission.getVersion())
+            .organization(organization)
+            .build();
+        return permission;
+    }
 }

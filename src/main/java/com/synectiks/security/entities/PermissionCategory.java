@@ -3,7 +3,9 @@ package com.synectiks.security.entities;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.synectiks.security.config.IDBConsts;
 import com.synectiks.security.domain.PSqlEntity;
-import org.hibernate.annotations.ColumnDefault;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.NoArgsConstructor;
 
 import javax.persistence.*;
 import java.util.List;
@@ -13,6 +15,9 @@ import java.util.List;
  */
 @Entity
 @Table(name = IDBConsts.Tbl_PERMISSION_CATEGORY)
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class PermissionCategory extends PSqlEntity {
 
 	private static final long serialVersionUID = 2619620405443093733L;
@@ -101,4 +106,14 @@ public class PermissionCategory extends PSqlEntity {
 				+ "}";
 	}
 
+    public static PermissionCategory build(PermissionCategory oldPermCatg, Organization organization){
+        PermissionCategory permissionCategory = PermissionCategory.builder()
+            .name(oldPermCatg.getName())
+            .status(oldPermCatg.getStatus())
+            .description(oldPermCatg.getDescription())
+            .version(oldPermCatg.getVersion())
+            .organization(organization)
+            .build();
+        return permissionCategory;
+    }
 }

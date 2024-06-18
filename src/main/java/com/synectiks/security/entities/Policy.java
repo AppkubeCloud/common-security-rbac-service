@@ -3,6 +3,9 @@ package com.synectiks.security.entities;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.synectiks.security.config.IDBConsts;
 import com.synectiks.security.domain.PSqlEntity;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.NoArgsConstructor;
 
 import javax.persistence.*;
 import java.util.List;
@@ -12,6 +15,9 @@ import java.util.List;
  */
 @Entity
 @Table(name = IDBConsts.Tbl_POLICY)
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class Policy extends PSqlEntity {
 
 	private static final long serialVersionUID = 2619620405443093727L;
@@ -81,6 +87,17 @@ public class Policy extends PSqlEntity {
 
     public void setOrganization(Organization organization) {
         this.organization = organization;
+    }
+
+    public static Policy build(Policy oldPolicy, Organization organization){
+        Policy policy = Policy.builder()
+            .name(oldPolicy.getName())
+            .description(oldPolicy.getDescription())
+            .status(oldPolicy.getStatus())
+            .version(oldPolicy.getVersion())
+            .organization(organization)
+            .build();
+        return policy;
     }
 
     @Override

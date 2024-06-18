@@ -8,22 +8,25 @@ import javax.persistence.*;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.synectiks.security.config.IConsts;
 import com.synectiks.security.config.IDBConsts;
 import com.synectiks.security.domain.PSqlEntity;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.NoArgsConstructor;
 import org.hibernate.annotations.ColumnDefault;
-import org.hibernate.annotations.Fetch;
-import org.hibernate.annotations.FetchMode;
 
 /**
  * @author Rajesh
  */
 @Entity
 @Table(name = IDBConsts.Tbl_ROLES)
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class Role extends PSqlEntity {
 
 	private static final long serialVersionUID = 2619620405443093727L;
-	public static final Role ROLE_ADMIN = create(IConsts.ADMIN);
+//	public static final Role ROLE_ADMIN = create(IConsts.ADMIN);
 
 	private String name;
 	@Column(nullable = true)
@@ -164,11 +167,11 @@ public class Role extends PSqlEntity {
 				+ "}";
 	}
 
-	private static Role create(String roleName) {
-		Role role = new Role();
-		role.setName("ROLE_" + roleName);
-		return role;
-	}
+//	private static Role create(String roleName) {
+//		Role role = new Role();
+//		role.setName("ROLE_" + roleName);
+//		return role;
+//	}
 
     @Override
     public boolean equals(Object obj) {
@@ -184,4 +187,15 @@ public class Role extends PSqlEntity {
         return this.id == otherObject.id;
     }
 
+    public static Role build(Role oldRole, Organization organization){
+        Role role = Role.builder()
+            .name(oldRole.getName())
+            .version(oldRole.getVersion())
+            .grp(oldRole.isGrp())
+            .isDefault(oldRole.isDefault())
+            .description(oldRole.getDescription())
+            .organization(organization)
+            .build();
+        return role;
+    }
 }

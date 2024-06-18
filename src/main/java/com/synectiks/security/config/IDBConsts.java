@@ -16,6 +16,7 @@ public interface IDBConsts {
     String Tbl_POLICY = "Policy";
     String Tbl_PERMISSION_CATEGORY = "PermissionCategory";
     String Tbl_POLICY_ASSIGNED_PERMISSIONS = "PolicyAssignedPermissions";
+    String Tbl_POLICY_PERMISSIONS = "PolicyPermissions";
 	String Tbl_SERVICE = "Service";
 	String Tbl_SSM = "SSMachine";
 	String Tbl_SSM_STATE = "SSMState";

@@ -97,6 +97,9 @@ public class UserController implements IApiController {
     @Autowired
     private EmailQueueService emailQueueService;
 
+    @Autowired
+    private PolicyAssignedPermissionsRepository policyAssignedPermissionsRepository;
+
 
     @Override
     @RequestMapping(path = IConsts.API_FIND_ALL, method = RequestMethod.GET)
@@ -196,6 +199,17 @@ public class UserController implements IApiController {
             } else {
                 logger.info("Given organization not present. Organization: {}", organizationName);
                 organizationService.saveOrUpdateOrganization(orgProfileFile, organizationName, user, targetService, appkubeAwsS3Service);
+
+                Organization defaultOrg = organizationService.getOrganizationByName(Constants.DEFAULT_ORGANIZATION);
+
+                // create new permission categories and permissions from default org and assigned to new organization
+                List<PermissionCategory> newPermissionCategories = assignPermissionCategoriesToNewOrganization(defaultOrg, user);
+                // create new policies from default org and assigned to new organization
+                List<Policy> newPolicies = assignPoliciesToNewOrganization(defaultOrg, user);
+                // create new policies/permission categories and permissions from default org and assigned to new organization
+                assignPermissionsToPoliciesOfNewOrganization(newPolicies, newPermissionCategories);
+                // create new roles from default org and assigned to new organization
+                assignRolesToNewOrganization(newPolicies, defaultOrg, user);
             }
         }
 
@@ -219,12 +233,14 @@ public class UserController implements IApiController {
         //this statement executes when user created with the sign-up page.
         if (StringUtils.isBlank(roleId) && Constants.USER_TYPE_ADMIN.equalsIgnoreCase(type) && ownerId == null) {
             logger.debug("Assigning default role group for organization admin");
-//            List<Role> roleList = (List<Role>) roleRepository.findByCreatedByAndGrp(Constants.SYSTEM_ACCOUNT, true);
-            List<Role> roleList = (List<Role>) roleRepository.findByGrpAndIsDefault(true, true);
-            if (roleList.size() > 0) {
-                user.setRoles(roleList);
-            }
+            List<Role> newRoles = roleRepository.findByOrganizationIdAndGrp(user.getOrganization().getId(),true);
+            user.setRoles(newRoles);
+//            List<Role> roleList = (List<Role>) roleRepository.findByGrpAndIsDefault(true, true);
+//            if (roleList.size() > 0) {
+//                user.setRoles(roleList);
+//            }
         }
+
         if (userProfileImage != null) {
             logger.debug("Saving user profile image to aws s3");
             try {
@@ -243,6 +259,88 @@ public class UserController implements IApiController {
         }
 
         return ResponseEntity.status(HttpStatus.CREATED).body(user);
+    }
+
+    private List<PermissionCategory> assignPermissionCategoriesToNewOrganization(Organization defaultOrg, User user) {
+        if(defaultOrg == null){
+            defaultOrg = organizationService.getOrganizationByName(Constants.DEFAULT_ORGANIZATION);
+        }
+
+        List<PermissionCategory> defaultPermissionCategoryList = permissionCategoryRepository.findByOrganizationId(defaultOrg.getId());
+        List<PermissionCategory> newList = new ArrayList<>();
+        for(PermissionCategory permissionCategory: defaultPermissionCategoryList){
+            PermissionCategory pc = PermissionCategory.build(permissionCategory, user.getOrganization());
+            List<Permission> pList = new ArrayList<>();
+            for(Permission permission: permissionCategory.getPermissions()){
+                Permission prm = Permission.build(permission, user.getOrganization());
+                pList.add(prm);
+            }
+            List<Permission> permissionList = permissionRepository.saveAll(pList);
+            pc.setPermissions(permissionList);
+            newList.add(pc);
+        }
+        return permissionCategoryRepository.saveAll(newList);
+    }
+
+    private List<Policy> assignPoliciesToNewOrganization(Organization defaultOrg, User user) {
+        if(defaultOrg == null){
+            defaultOrg = organizationService.getOrganizationByName(Constants.DEFAULT_ORGANIZATION);
+        }
+        List<Policy> defaultPoliciesList = policyRepository.findByOrganizationId(defaultOrg.getId());
+        List<Policy> newPolicies = new ArrayList<>();
+        for(Policy policy: defaultPoliciesList){
+            Policy newPolicy = Policy.build(policy, user.getOrganization());
+            newPolicies.add(newPolicy);
+//            policy.setId(null);
+//            policy.setOrganization(user.getOrganization());
+//            policy.setPermissions(null);
+        }
+        return policyRepository.saveAll(newPolicies);
+    }
+
+    private void assignPermissionsToPoliciesOfNewOrganization(List<Policy> policyList, List<PermissionCategory> permissionCategoryList) {
+        for(Policy policy: policyList){
+            for(PermissionCategory permissionCategory: permissionCategoryList){
+                for(Permission permission: permissionCategory.getPermissions()){
+                    PolicyAssignedPermissions policyAssignedPermissions = new PolicyAssignedPermissions();
+                    policyAssignedPermissions.setPolicyId(policy.getId());
+                    policyAssignedPermissions.setPolicyName(policy.getName());
+                    policyAssignedPermissions.setPermissionCategoryId(permissionCategory.getId());
+                    policyAssignedPermissions.setPermissionCategoryName(permissionCategory.getName());
+                    policyAssignedPermissions.setPermissionId(permission.getId());
+                    policyAssignedPermissions.setPermissionName(permission.getName());
+                    policyAssignedPermissionsRepository.save(policyAssignedPermissions);
+                }
+            }
+            policy.setPermissions(policyAssignedPermissionsRepository.findByPolicyId(policy.getId()));
+        }
+    }
+
+    private List<Role> assignRolesToNewOrganization(List<Policy> newPolicies, Organization defaultOrg, User user) {
+        if(defaultOrg == null){
+            defaultOrg = organizationService.getOrganizationByName(Constants.DEFAULT_ORGANIZATION);
+        }
+        List<Role> defaultRolesList = roleRepository.findByOrganizationIdAndIsDefault(defaultOrg.getId(), true);
+        List<Role> newRolesList = new ArrayList<>();
+        for(Role role: defaultRolesList){
+            Role newRole = Role.build(role, user.getOrganization());
+            if(!newRole.isGrp()){
+                if(newRole.getName().equalsIgnoreCase("Administrator")){
+                    newRole.setPolicies(newPolicies.stream().filter(obj -> obj.getName().equalsIgnoreCase("All Access")).collect(Collectors.toList()));
+                }else if(newRole.getName().equalsIgnoreCase("Basic User")){
+                    newRole.setPolicies(newPolicies.stream().filter(obj -> obj.getName().equalsIgnoreCase("No Access")).collect(Collectors.toList()));
+                }
+            }
+            newRolesList.add(newRole);
+        }
+        for(Role role: newRolesList){
+            if(role.isGrp() && role.getName().equalsIgnoreCase("Super Admins")){
+                role.setRoles(newRolesList.stream().filter(obj -> obj.getName().equalsIgnoreCase("Administrator") && obj.isGrp() == false).collect(Collectors.toSet()));
+            }else if(role.isGrp() && role.getName().equalsIgnoreCase("Default Users")){
+                role.setRoles(newRolesList.stream().filter(obj -> obj.getName().equalsIgnoreCase("Basic User") && obj.isGrp() == false).collect(Collectors.toSet()));
+            }
+        }
+        return roleRepository.saveAll(newRolesList);
     }
 
     private void setNewUserMailToQueue(User user, String type) {

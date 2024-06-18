@@ -1,5 +1,5 @@
 /**
- * 
+ *
  */
 package com.synectiks.security.domain;
 
@@ -13,8 +13,6 @@ import javax.persistence.Id;
 import javax.persistence.Inheritance;
 import javax.persistence.InheritanceType;
 import javax.persistence.SequenceGenerator;
-
-import com.synectiks.security.util.IUtils;
 
 /**
  * @author Rajesh
@@ -65,11 +63,11 @@ public abstract class PSqlEntity implements Serializable {
 		this.id = id;
 	}
 
-	public void setId(String id) {
-		if (!IUtils.isNullOrEmpty(id) && id.trim().matches("^\\d+$")) {
-			this.id = Long.parseLong(id.trim());
-		}
-	}
+//	public void setId(String id) {
+//		if (!IUtils.isNullOrEmpty(id) && id.trim().matches("^\\d+$")) {
+//			this.id = Long.parseLong(id.trim());
+//		}
+//	}
 
 	public void setCreatedAt(Date createdAt) {
 		this.createdAt = createdAt;
